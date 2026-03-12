@@ -82,7 +82,11 @@ Found a bug or have a suggestion? Post it in the [Issues](https://github.com/Cra
 
 ## Donate
 
+Special thanks to those who have donated — I really appreciate you! It is never required, but if you feel the need to contribute to the project financially, you can do so by clicking the button below.
+
 <a href="https://www.buymeacoffee.com/crazybebop"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-blue.png" height="60" width="217" alt="Buy Me A Coffee"></a>
+
+**Donors:** [saprobes](https://github.com/saprobes/)
 
 ## Credits
 
