@@ -1,4 +1,20 @@
-# CrazyBebop — 2025-07-16 build (Mar 10, 2026)
+# CrazyBebop — 2025-07-16 build (Mar 13, 2026)
+
+## Mar 13 Update
+
+### New Dark Theme — WARP0716
+- New icons, recommend stamps, and editor font
+- Original themes available as "Classic" and "Classic_Dark" in the style dropdown
+
+### Custom Jobs — Complete
+- Full rewrite of the Custom Jobs patch for the 07-16 client — all 10 phases working
+- Job names, sprite paths, palettes, head sprites, and display names all driven by Lua files
+- Palette and head sprite tables expanded to support up to 10,000 custom job classes
+- Display names loaded at runtime via Lua C API (bypasses broken CLua::CallScriptFunction in 07-16)
+- Custom job sprites render correctly in character select, creation, and in-game
+- See the [Custom Jobs Guide](docs/CustomJobs/CUSTOM_JOBS_GUIDE.html) or [online version](https://legacygamers.net/docs/public/customjobs/) for setup instructions
+- Patch renamed to "Enable Custom Jobs (Reforged)"
+- Example sprite, IMF, and icon files included in `docs/CustomJobs/example/`
 
 ## Mar 12 Update
 

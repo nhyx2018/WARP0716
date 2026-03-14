@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Custom Jobs Guide — WARP 07-16</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<nav class="toc" aria-label="Table of contents">
+  <a href="#step-1">1. Job ID</a>
+  <a href="#step-2">2. Lua Files</a>
+  <a href="#step-3">3. Sprites</a>
+  <a href="#step-4">4. IMF Files</a>
+  <a href="#step-5">5. Icons</a>
+  <a href="#step-6">6. WARP Profile</a>
+  <a href="#step-7">7. Server-Side</a>
+  <a href="#checklist">Checklist</a>
+  <a href="#examples">Examples</a>
+  <a href="#troubleshooting">Troubleshooting</a>
+</nav>
+
+<div class="page-wrapper">
+
+<!-- ══════════════════ HERO ══════════════════ -->
+<header class="hero">
+  <div class="hero-label">WARP for 2025-07-16</div>
+  <h1>Custom Jobs Guide</h1>
+  <p class="hero-sub">Everything you need to add custom jobs to a <strong>2025-07-16</strong> Ragnarok Online client using the <strong>CustomJobs</strong> WARP patch.</p>
+</header>
+
+<div class="overview-grid">
+  <div class="overview-cell">
+    <div class="overview-cell-label">Requirements</div>
+    <div class="overview-cell-value">WARP 07-16, rAthena, sprite editor (optional)</div>
+  </div>
+  <div class="overview-cell">
+    <div class="overview-cell-label">Job ID Range</div>
+    <div class="overview-cell-value"><code>4345</code> &ndash; MaxJob (default 4500)</div>
+  </div>
+  <div class="overview-cell">
+    <div class="overview-cell-label">Template</div>
+    <div class="overview-cell-value">See the <code>example/</code> folder</div>
+  </div>
+</div>
+
+<!-- ══════════════════ STEP 1 ══════════════════ -->
+<div class="section" id="step-1">
+<h2><span class="step-badge">1</span> Choose a Job ID</h2>
+<p>Pick an unused ID between <strong>4345</strong> and your MaxJob setting (default 4500). The ID must match on both client and server.</p>
+<div class="callout callout-warn">
+  <strong>Warning:</strong> IDs below 4345 conflict with existing rAthena jobs (Summoner, Doram, etc). IDs must not exceed your MaxJob value in the WARP profile.
+</div>
+<p>For this guide, we'll use <code>4435</code> as our example ID and <code>MY_CUSTOM_JOB</code> as the name.</p>
+</div>
+
+<!-- ══════════════════ STEP 2 ══════════════════ -->
+<div class="section" id="step-2">
+<h2><span class="step-badge">2</span> Client-Side Lua Files</h2>
+<p>All Lua files are in <code>data/luafiles514/lua files/JobInfo/</code>. Edit <strong>two</strong> files:</p>
+
+<h3>PCIds.lub &mdash; Job ID Definition</h3>
+<p>Add your job to the <code>PCIds</code> table (in the "Extended 2nd Classes" section):</p>
+<div class="code-label">PCIds.lub</div>
+<pre><code>MY_CUSTOM_JOB   = 4435,
+MY_CUSTOM_JOB_F = 4436,  -- optional: female variant with different sprite</code></pre>
+
+<h3>PCFuncs.lub &mdash; Job Properties</h3>
+<p>Add entries at the <strong>bottom</strong> of PCFuncs.lub:</p>
+<div class="code-label">PCFuncs.lub</div>
+<pre><code>-- Sprite folder name (MUST match your .spr/.act filename exactly, ASCII only)
+PCPaths[PCIds.MY_CUSTOM_JOB]   = "MY_CUSTOM_JOB"
+PCPaths[PCIds.MY_CUSTOM_JOB_F] = "MY_CUSTOM_JOB"
+
+-- Display name (shown in BasicInfo, char select, party window)
+PCNames[PCIds.MY_CUSTOM_JOB]   = "Custom Job"
+PCNames[PCIds.MY_CUSTOM_JOB_F] = "Custom Job"
+
+-- Inherit hand sprites, palettes, and IMF from an existing job
+-- Common bases: PCIds.NOVICE, PCIds.SWORDMAN, PCIds.KNIGHT
+local baseJob  = PCIds.NOVICE
+local baseHand = PCHands[baseJob]
+local basePal  = PCPals[baseJob]
+local baseImf  = PCImfs[baseJob]
+
+local myJobs = { PCIds.MY_CUSTOM_JOB, PCIds.MY_CUSTOM_JOB_F }
+for _, jid in ipairs(myJobs) do
+    if jid and not PCHands[jid] then PCHands[jid] = baseHand end
+    if jid and not PCPals[jid]  then PCPals[jid]  = basePal  end
+    if jid and not PCImfs[jid]  then PCImfs[jid]  = baseImf  end
+end</code></pre>
+
+<div class="callout callout-warn">
+  <strong>Warning:</strong> Do NOT edit lub files with a text editor that corrupts CP949 (Korean) encoding. The existing entries contain Korean text. ASCII-only additions at the bottom of the file are safe with any editor. For edits to Korean content, use a hex editor or Python binary I/O.
+</div>
+</div>
+
+<!-- ══════════════════ STEP 3 ══════════════════ -->
+<div class="section" id="step-3">
+<h2><span class="step-badge">3</span> Sprite Files</h2>
+<p>Sprites go in the human race body directory. The Korean folder names encode as CP949 on disk.</p>
+
+<h3>Required Files (8 total)</h3>
+<table>
+  <tr>
+    <th>File</th>
+    <th>Client Path</th>
+  </tr>
+  <tr>
+    <td>Male base sprite</td>
+    <td><code>data/sprite/인간족/몸통/남/MY_CUSTOM_JOB_남.spr</code></td>
+  </tr>
+  <tr>
+    <td>Male base animation</td>
+    <td><code>data/sprite/인간족/몸통/남/MY_CUSTOM_JOB_남.act</code></td>
+  </tr>
+  <tr>
+    <td>Female base sprite</td>
+    <td><code>data/sprite/인간족/몸통/여/MY_CUSTOM_JOB_여.spr</code></td>
+  </tr>
+  <tr>
+    <td>Female base animation</td>
+    <td><code>data/sprite/인간족/몸통/여/MY_CUSTOM_JOB_여.act</code></td>
+  </tr>
+  <tr>
+    <td>Male costume sprite</td>
+    <td><code>data/sprite/인간족/몸통/남/costume_1/my_custom_job_남_1.spr</code></td>
+  </tr>
+  <tr>
+    <td>Male costume animation</td>
+    <td><code>data/sprite/인간족/몸통/남/costume_1/my_custom_job_남_1.act</code></td>
+  </tr>
+  <tr>
+    <td>Female costume sprite</td>
+    <td><code>data/sprite/인간족/몸통/여/costume_1/my_custom_job_여_1.spr</code></td>
+  </tr>
+  <tr>
+    <td>Female costume animation</td>
+    <td><code>data/sprite/인간족/몸통/여/costume_1/my_custom_job_여_1.act</code></td>
+  </tr>
+</table>
+
+<div class="callout callout-info">
+  <strong>Note:</strong> Base sprite filenames use UPPERCASE to match the PCPaths value. Costume filenames use <strong>lowercase</strong> with a <code>_1</code> suffix. Costume files can be copies of the base sprites.
+</div>
+
+<h3>Korean Folder Reference</h3>
+<table>
+  <tr><th>Korean</th><th>English</th><th>CP949 Bytes (hex)</th></tr>
+  <tr><td>인간족</td><td>Human Race</td><td><code>C0 CE B0 A3 C1 B7</code></td></tr>
+  <tr><td>몸통</td><td>Body</td><td><code>B8 F6 C5 EB</code></td></tr>
+  <tr><td>남</td><td>Male</td><td><code>B3 B2</code></td></tr>
+  <tr><td>여</td><td>Female</td><td><code>BF A9</code></td></tr>
+</table>
+
+<h3>Using Existing Sprites as Placeholders</h3>
+<p>If you don't have custom sprites yet, copy an existing job's sprites and rename them. The <code>example/</code> folder includes Novice sprites you can use as a starting point.</p>
+</div>
+
+<!-- ══════════════════ STEP 4 ══════════════════ -->
+<div class="section" id="step-4">
+<h2><span class="step-badge">4</span> IMF Files</h2>
+<p>IMF (Interval Motion Format) files control animation timing. Place them in <code>data/imf/</code>:</p>
+<pre><code>data/imf/MY_CUSTOM_JOB_남.imf    (male)
+data/imf/MY_CUSTOM_JOB_여.imf    (female)</code></pre>
+<p>Copy from any existing job. The <code>example/</code> folder includes Novice IMF files.</p>
+
+<div class="callout callout-critical">
+  <strong>Critical:</strong> Without IMF files, your character will be <strong>invisible in-game</strong> (shadow only visible). This is the most commonly missed step.
+</div>
+</div>
+
+<!-- ══════════════════ STEP 5 ══════════════════ -->
+<div class="section" id="step-5">
+<h2><span class="step-badge">5</span> Icon Files</h2>
+<p>Party UI icons go in <code>data/texture/유저인터페이스/renewalparty/</code>:</p>
+<pre><code>icon_jobs_4435.bmp          (normal icon, 24x24 BMP)
+icon_jobs_4435_die.bmp      (dead icon, 24x24 BMP)</code></pre>
+<p>Replace <code>4435</code> with your actual job ID. Copy from any existing job icon as a placeholder. The <code>example/</code> folder includes the Novice icon.</p>
+
+<div class="callout callout-warn">
+  <strong>Warning:</strong> Missing icon files may cause crashes when viewing the party window with your custom job in the party.
+</div>
+</div>
+
+<!-- ══════════════════ STEP 6 ══════════════════ -->
+<div class="section" id="step-6">
+<h2><span class="step-badge">6</span> WARP Profile Settings</h2>
+<p>In your WARP profile YAML, ensure CustomJobs is enabled and MaxJob covers your IDs:</p>
+<div class="code-label">profile.yml</div>
+<pre><code>patches:
+  CustomJobs: on
+
+$maxJob:
+  display: 4500    # Must be &gt;= your highest job ID + 1</code></pre>
+<p>Then rebuild the exe using WARP (GUI or console).</p>
+</div>
+
+<!-- ══════════════════ STEP 7 ══════════════════ -->
+<div class="section" id="step-7">
+<h2><span class="step-badge">7</span> Server-Side (rAthena)</h2>
+
+<h3>A. Job ID &mdash; <code>src/common/mmo.hpp</code></h3>
+<div class="code-label">mmo.hpp</div>
+<pre><code>// Add to the e_job enum:
+JOB_MY_CUSTOM_JOB = 4435,</code></pre>
+
+<h3>B. Map ID &mdash; <code>src/map/map.hpp</code></h3>
+<div class="code-label">map.hpp</div>
+<pre><code>// Add to e_mapid enum:
+MAPID_MY_CUSTOM_JOB,</code></pre>
+
+<h3>C. Job Conversion &mdash; <code>src/map/pc.cpp</code></h3>
+<div class="code-label">pc.cpp</div>
+<pre><code>// In pc_jobid2mapid():
+case JOB_MY_CUSTOM_JOB:
+    return MAPID_MY_CUSTOM_JOB;
+
+// In pc_mapid2jobid():
+case MAPID_MY_CUSTOM_JOB:
+    return JOB_MY_CUSTOM_JOB;</code></pre>
+
+<h3>D. Script Constants &mdash; <code>src/map/script_constants.hpp</code></h3>
+<div class="code-label">script_constants.hpp</div>
+<pre><code>export_constant(JOB_MY_CUSTOM_JOB);</code></pre>
+
+<h3>E. Skill Tree &mdash; <code>db/import/skill_tree.yml</code></h3>
+<div class="code-label">skill_tree.yml</div>
+<pre><code>- Job: My_Custom_Job
+  Inherit:
+    - Job: Novice
+  Tree:
+    - Skill: SM_SWORD
+      MaxLevel: 10
+    # ... add your skills</code></pre>
+
+<h3>F. Job Change NPC (example)</h3>
+<div class="code-label">npc script</div>
+<pre><code>prontera,150,180,5	script	Job Master	2_M_SAGE,{
+    if (BaseLevel &lt; 10) {
+        mes "Come back at base level 10.";
+        close;
+    }
+    jobchange JOB_MY_CUSTOM_JOB;
+    mes "You are now a Custom Job!";
+    close;
+}</code></pre>
+</div>
+
+<!-- ══════════════════ CHECKLIST ══════════════════ -->
+<div class="section" id="checklist">
+<h2>File Checklist</h2>
+<p>Check off items as you complete them. Progress is saved in your browser.</p>
+
+<div class="checklist-section">
+  <div class="checklist-card">
+    <h3>Client Side</h3>
+    <div class="checklist-progress">
+      <div class="checklist-progress-bar"><div class="checklist-progress-fill"></div></div>
+      <span class="checklist-progress-label">0 / 10</span>
+    </div>
+    <ul class="checklist">
+      <li><input type="checkbox" data-id="c-pcids"><span><code>PCIds.lub</code> &mdash; Job ID added to PCIds table</span></li>
+      <li><input type="checkbox" data-id="c-pcfuncs"><span><code>PCFuncs.lub</code> &mdash; PCPaths, PCNames, PCHands, PCPals, PCImfs</span></li>
+      <li><input type="checkbox" data-id="c-spr-m"><span>Male base sprite <code>.spr</code> + <code>.act</code></span></li>
+      <li><input type="checkbox" data-id="c-spr-f"><span>Female base sprite <code>.spr</code> + <code>.act</code></span></li>
+      <li><input type="checkbox" data-id="c-cos-m"><span>Male costume_1 sprite <code>.spr</code> + <code>.act</code></span></li>
+      <li><input type="checkbox" data-id="c-cos-f"><span>Female costume_1 sprite <code>.spr</code> + <code>.act</code></span></li>
+      <li><input type="checkbox" data-id="c-imf-m"><span>Male IMF file</span></li>
+      <li><input type="checkbox" data-id="c-imf-f"><span>Female IMF file</span></li>
+      <li><input type="checkbox" data-id="c-icon"><span>Icon BMP + die variant</span></li>
+      <li><input type="checkbox" data-id="c-warp"><span>WARP profile: CustomJobs on, MaxJob set</span></li>
+    </ul>
+    <button class="checklist-reset">Reset</button>
+  </div>
+  <div class="checklist-card">
+    <h3>Server Side</h3>
+    <div class="checklist-progress">
+      <div class="checklist-progress-bar"><div class="checklist-progress-fill"></div></div>
+      <span class="checklist-progress-label">0 / 6</span>
+    </div>
+    <ul class="checklist">
+      <li><input type="checkbox" data-id="s-mmo"><span><code>mmo.hpp</code> &mdash; JOB_ enum entry</span></li>
+      <li><input type="checkbox" data-id="s-map"><span><code>map.hpp</code> &mdash; MAPID_ enum entry</span></li>
+      <li><input type="checkbox" data-id="s-pc"><span><code>pc.cpp</code> &mdash; Both conversion functions</span></li>
+      <li><input type="checkbox" data-id="s-const"><span><code>script_constants.hpp</code> &mdash; Export constant</span></li>
+      <li><input type="checkbox" data-id="s-skill"><span><code>skill_tree.yml</code> &mdash; Skill tree definition</span></li>
+      <li><input type="checkbox" data-id="s-npc"><span>NPC script for job change</span></li>
+    </ul>
+    <button class="checklist-reset">Reset</button>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════ EXAMPLES ══════════════════ -->
+<div class="section" id="examples">
+<h2>Example Files</h2>
+<p>The <code>example/</code> folder contains a complete template with placeholder files (Novice sprites, IMF, icons). Rename and place them according to the paths above.</p>
+<div class="file-tree">
+<span class="ft-dir">example/</span>
+├── <span class="ft-dir">sprite/</span>
+│   ├── <span class="ft-dir">male/</span>
+│   │   ├── <span class="ft-file">NOVICE_male.spr</span>          <em>→ rename to YOUR_JOB_남.spr</em>
+│   │   ├── <span class="ft-file">NOVICE_male.act</span>          <em>→ rename to YOUR_JOB_남.act</em>
+│   │   └── <span class="ft-dir">costume_1/</span>
+│   │       ├── <span class="ft-file">example_male_1.spr</span>   <em>→ rename to your_job_남_1.spr</em>
+│   │       └── <span class="ft-file">example_male_1.act</span>   <em>→ rename to your_job_남_1.act</em>
+│   └── <span class="ft-dir">female/</span>
+│       ├── <span class="ft-file">NOVICE_female.spr</span>        <em>→ rename to YOUR_JOB_여.spr</em>
+│       ├── <span class="ft-file">NOVICE_female.act</span>        <em>→ rename to YOUR_JOB_여.act</em>
+│       └── <span class="ft-dir">costume_1/</span>
+│           ├── <span class="ft-file">example_female_1.spr</span> <em>→ rename to your_job_여_1.spr</em>
+│           └── <span class="ft-file">example_female_1.act</span> <em>→ rename to your_job_여_1.act</em>
+├── <span class="ft-dir">imf/</span>
+│   ├── <span class="ft-file">EXAMPLE_JOB_male.imf</span>         <em>→ rename to YOUR_JOB_남.imf</em>
+│   └── <span class="ft-file">EXAMPLE_JOB_female.imf</span>       <em>→ rename to YOUR_JOB_여.imf</em>
+└── <span class="ft-dir">icons/</span>
+    ├── <span class="ft-file">icon_jobs_XXXX.bmp</span>            <em>→ rename XXXX to your job ID</em>
+    └── <span class="ft-file">icon_jobs_XXXX_die.bmp</span>        <em>→ rename XXXX to your job ID</em>
+</div>
+</div>
+
+<!-- ══════════════════ TROUBLESHOOTING ══════════════════ -->
+<div class="section" id="troubleshooting">
+<h2>Troubleshooting</h2>
+
+<div class="trouble-grid">
+  <div class="trouble-item">
+    <div class="trouble-cell">"Cannot find File" error on login</div>
+    <div class="trouble-cell">Missing sprite or costume_1 files</div>
+    <div class="trouble-cell">Add all 8 sprite files (base + costume, both genders)</div>
+  </div>
+  <div class="trouble-item">
+    <div class="trouble-cell">Character invisible (shadow only)</div>
+    <div class="trouble-cell">Missing IMF files</div>
+    <div class="trouble-cell">Copy IMF from an existing job and rename</div>
+  </div>
+  <div class="trouble-item">
+    <div class="trouble-cell">Crash on party window</div>
+    <div class="trouble-cell">Missing icon BMP files</div>
+    <div class="trouble-cell">Add icon_jobs_ID.bmp and _die.bmp</div>
+  </div>
+  <div class="trouble-item">
+    <div class="trouble-cell">Shows "Poring" as job name</div>
+    <div class="trouble-cell">PCNames entry missing in PCFuncs.lub</div>
+    <div class="trouble-cell">Add PCNames[PCIds.YOUR_JOB] = "Name"</div>
+  </div>
+  <div class="trouble-item">
+    <div class="trouble-cell">Wrong sprite (shows Novice)</div>
+    <div class="trouble-cell">PCPaths doesn't match filename</div>
+    <div class="trouble-cell">Ensure PCPaths value matches sprite filename (case-sensitive)</div>
+  </div>
+  <div class="trouble-item">
+    <div class="trouble-cell">Client crash on character select</div>
+    <div class="trouble-cell">Job ID exceeds MaxJob</div>
+    <div class="trouble-cell">Increase MaxJob in WARP profile YAML</div>
+  </div>
+  <div class="trouble-item">
+    <div class="trouble-cell">"Cannot find File" during char creation</div>
+    <div class="trouble-cell">Outdated CustomJobs.qjs</div>
+    <div class="trouble-cell">Update to latest CustomJobs.qjs</div>
+  </div>
+</div>
+</div>
+
+<footer>
+  <span class="footer-brand"><a href="https://github.com/CrazyBebop/WARP0716" style="color:inherit;text-decoration:none">WARP 07-16</a></span>
+  <span>Custom Jobs Guide &mdash; <a href="https://github.com/CrazyBebop" style="color:var(--gold-dim);text-decoration:none">CrazyBebop</a></span>
+  <span>Powered by <a href="https://legacygamers.net" style="color:var(--gold-dim);text-decoration:none">LegacyGamers Network</a> &mdash; Made with <span style="color:#e74c8b">&hearts;</span></span>
+</footer>
+
+</div>
+
+<script src="js/checklist.js"></script>
+</body>
+</html>

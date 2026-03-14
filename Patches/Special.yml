@@ -39,10 +39,10 @@ CustomSpecials:
             desc : Enables custom shield sprites beyond the default set by loading shield definitions from lua files (similar to the Xray system). Required for servers with custom shield graphics.
         
         - CustomJobs:
-            title : Enable Custom Jobs
+            title : Enable Custom Jobs (Reforged)
             recommend : no
-            author : Neo-Mind , CrazyBebop
-            desc : Enables custom job classes beyond the official set by loading job definitions from lua files (similar to the Xray system). Required for servers with custom classes or modified job sprites.
+            author : CrazyBebop
+            desc : Enables custom job classes beyond the official set by loading job definitions from lua files. Full rewrite for the 07-16 client — 10-phase binary patch covering job names, sprite paths, palettes, head sprites, display names (via Lua C API), and range checks. Required for servers with custom classes or modified job sprites.
 
         - CustomHomuns:
             title : Enable Custom Homunculi

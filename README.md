@@ -2,7 +2,7 @@
 
 WARP patches for the 2025-07-16 client build. This build of WARP **only accepts the 2025-07-16 client EXE** — it will reject any other version.
 
-15 patches fixed for 07-16 compatibility, 20+ dead patches removed, all patch descriptions rewritten, and CustomJobs fully implemented. **0 errors on all-patch test** (patches apply cleanly — does not guarantee every feature works as intended in-game; if you find something off, please [open an issue](https://github.com/CrazyBebop/WARP0716/issues)).
+18 patches fixed for 07-16 compatibility, 20+ dead patches removed, all patch descriptions rewritten, and CustomJobs fully implemented. **0 errors on all-patch test** (patches apply cleanly — does not guarantee every feature works as intended in-game; if you find something off, please [open an issue](https://github.com/CrazyBebop/WARP0716/issues)).
 
 ## Setup
 
@@ -34,8 +34,8 @@ Click **"Recommended"** in the WARP GUI to select all recommended patches at onc
 - **NoGGuard** — Fixed RagHash.dat crash (stale file no longer crashes client)
 - **GRFsFromIni** — Fixed crash on invalid DATA.INI entries
 
-### CustomJobs — Implemented (Needs Testing)
-All job tables are now driven by Lua files — add custom jobs without binary patching. Covers job display names, male/female sprite paths, palette tables, and head sprite tables. **This patch still needs in-game testing — please report any issues.**
+### CustomJobs — Implemented and Tested
+All job tables are now driven by Lua files — add custom jobs without binary patching. Covers job display names, male/female sprite paths, palette tables, and head sprite tables. Character creation, character select, and in-game rendering all working. More extensive community testing is still needed — please [report any issues](https://github.com/CrazyBebop/WARP0716/issues). See [`docs/CustomJobs/`](docs/CustomJobs/CUSTOM_JOBS_GUIDE.html) for a full guide with example files, or view online at [legacygamers.net/docs/public/customjobs](https://legacygamers.net/docs/public/customjobs/).
 
 ### Patches Not Needed on 07-16
 These are already handled or don't apply to this client version:
@@ -82,11 +82,11 @@ Found a bug or have a suggestion? Post it in the [Issues](https://github.com/Cra
 
 ## Donate
 
-Special thanks to those who have donated — I really appreciate you! It is never required, but if you feel the need to contribute to the project financially, you can do so by clicking the button below.
+It is never required, but if you feel the need to contribute to the project financially, you can do so by clicking the button below.
 
 <a href="https://www.buymeacoffee.com/crazybebop"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-blue.png" height="60" width="217" alt="Buy Me A Coffee"></a>
 
-**Donors:** [saprobes](https://github.com/saprobes/)
+Special thanks to the following donors so far: [saprobes](https://github.com/saprobes/), [Gerzzie](https://github.com/Gerzzie)
 
 ## Credits
 

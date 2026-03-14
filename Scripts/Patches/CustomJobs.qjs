@@ -20,9 +20,12 @@
 *                                                                          *
 |**************************************************************************|
 *                                                                          *
-*   Author(s)     : Neo-Mind , CrazyBebop                                  *
-*   Created Date  : 2021-03-19                                             *
-*   Last Modified : 2026-03-10                                             *
+*   Author(s)     : CrazyBebop                                             *
+*   Created Date  : 2026-03-10                                             *
+*   Last Modified : 2026-03-13                                             *
+*                                                                          *
+*   07-16 build: Full rewrite (apply0716). Original patch by Neo-Mind      *
+*   for older clients — generic codepath preserved for non-07-16 builds.   *
 *                                                                          *
 \**************************************************************************/
 
@@ -320,7 +323,7 @@ CustomJobs = function(_)
 	}
 
 	$$(_, 4.1, `Get the new max limit from user`)
-	const MaxJob = Exe.GetUserInput('$maxJob', D_Uint16, "Limit Input", "Enter the maximum no of Job IDs", 4400, {min: 4400, max: 5000, saveDefault: true});
+	const MaxJob = Exe.GetUserInput('$maxJob', D_Uint16, "Limit Input", "Enter the maximum no of Job IDs", 4500, {min: 4400, max: 10000, saveDefault: true});
 	if (MaxJob === false)
 		Cancel("No Max Limit specified");
 
@@ -1253,9 +1256,23 @@ CustomJobs.apply0716 = function(_)
 		epilogIns = epilogIns.getNext();
 
 	$$(_, '0716.8', `Get MaxJob from user`)
-	const MaxJob = Exe.GetUserInput('$maxJob', D_Uint16, "Limit Input", "Enter the maximum no of Job IDs", 4400, {min: 4400, max: 5000, saveDefault: true});
+	const MaxJob = Exe.GetUserInput('$maxJob', D_Uint16, "Limit Input", "Enter the maximum no of Job IDs", 4500, {min: 4400, max: 10000, saveDefault: true});
 	if (MaxJob === false)
 		Cancel("No Max Limit specified");
+
+	$$(_, '0716.8b', `Patch LoadJobNameTable capacity to accommodate MaxJob`)
+	const origCap = 0x1109;
+	const origCapBytes = origCap * 4; // 0x4424
+
+	// Find all instances of 0x1109 in the resize code (between limitAddr-0x40 and hookAddr)
+	const capAddrs = Exe.FindHexN(origCap.toHex(), limitAddr - 0x40, hookAddr);
+	for (const addr of capAddrs)
+		Exe.SetInt32(addr, MaxJob);
+
+	// Find the byte-offset displacement (0x4424 = 0x1109 * 4) in the LEA else-branch
+	const byteOffAddr = Exe.FindLastHex(origCapBytes.toHex(), limitAddr, limitAddr - 0x40);
+	if (byteOffAddr >= 0)
+		Exe.SetInt32(byteOffAddr, MaxJob * 4);
 
 	$$(_, '0716.9', `Overwrite string with Lua function name`)
 	const ReqJobName = this.overwrite("Baby Acolyte", "ReqPCJobName");
@@ -1263,9 +1280,13 @@ CustomJobs.apply0716 = function(_)
 	$$(_, '0716.10', `Load LUA and generate replacement code`)
 	LUA.load();
 
+	// Full range [0, MaxJob] ensures ALL converted indices are populated.
+	// The original code had separate ranges that covered the middle (45-4000) range
+	// with Korean names. The Lua replacement must cover these too, especially for
+	// Doram base jobs (4217-4315) which convert_job_to_trans_or_baby maps to
+	// indices 267-365 — gap between 0x2C and 0xFA1 in the old range scheme.
 	const limits = [
-		[0, 0x2C],
-		[0xFA1, MaxJob]
+		[0, MaxJob]
 	];
 
 	const templates = this.generate(
@@ -1333,9 +1354,9 @@ CustomJobs.apply0716 = function(_)
 		throw Error("Male sprite table end not found");
 
 	$$(_, '0716.P2.5', `Generate sprite path templates`)
+	// Full range — same reasoning as Phase 1 limits (see above).
 	const sprLimits = [
-		[0, 0x2C],
-		[0xFA1, MaxJob]
+		[0, MaxJob]
 	];
 	const sprTemplates = this.generate(
 		[["ReqPCPath", ReqPCPath], "dd>s", EDI, [LANGTYPE], EAX],
@@ -1393,203 +1414,608 @@ CustomJobs.apply0716 = function(_)
 	Exe.SetHex(femaleHookAddr, femaleCode);
 
 	// ==========================================================
-	// Phase 3: Palette + Head tables in InitJobSpriteNameTables
+	// Phase 3: Expand palette + head table capacity to MaxJob
+	// ==========================================================
+	// Palette tables (this+0xF4C/0xF58, cap 43) and head tables
+	// (this+0x616C/0x6178, cap 11) are too small for custom job indices.
+	// Expand via small trampolines that replace PUSH cap with PUSH MaxJob.
+	// Original hardcoded entries are preserved (Lua template loops can't be
+	// used here — CLua::CallScriptFunction is broken on 07-16, same root
+	// cause as Phase 8.3-8.4). Custom job indices get default fill value;
+	// Phase 4 bounds check handles the fallback to index 0x0D.
+
+	$$(_, '0716.P3.1', `Find and expand palette/head table capacities`)
+	const p3TableLEAs = [
+		{ leaHex: "8D B3 4C 0F 00 00", name: "PalMale"   },
+		{ leaHex: "8D B3 58 0F 00 00", name: "PalFemale" },
+		{ leaHex: "8D B3 6C 61 00 00", name: "HeadMale"  },
+		{ leaHex: "8D B3 78 61 00 00", name: "HeadFemale" },
+	];
+
+	let p3EnsureCapVir = -1;
+
+	for (let ti = 0; ti < 4; ti++) {
+		const tbl = p3TableLEAs[ti];
+
+		$$(_, `0716.P3.${ti+2}a`, `Find ${tbl.name} PUSH cap + CALL EnsureStatusCapacity`)
+		const p3LeaAddr = Exe.FindHex(tbl.leaHex);
+		if (p3LeaAddr < 0)
+			throw Error(`${tbl.name} LEA not found`);
+
+		// Pattern: LEA EAX,[EBP-0x18](3) + PUSH EAX(1) + PUSH imm8(2) + CALL(5)
+		const p3PatAddr = Exe.FindHex("8D 45 E8 50 6A", p3LeaAddr + 6, p3LeaAddr + 50);
+		if (p3PatAddr < 0)
+			throw Error(`${tbl.name} EnsureStatusCapacity pattern not found`);
+
+		const p3PushCapAddr = p3PatAddr + 4; // PUSH imm8 at offset 4 (after LEA+PUSH)
+		const p3CallAddr = p3PushCapAddr + 2; // CALL at offset 6
+
+		// Extract EnsureStatusCapacity VA (once)
+		if (p3EnsureCapVir < 0) {
+			const callImm = Exe.GetInt32(p3CallAddr + 1);
+			p3EnsureCapVir = Exe.Phy2Vir(p3CallAddr + 5, CODE) + callImm;
+		}
+
+		$$(_, `0716.P3.${ti+2}b`, `Build ${tbl.name} capacity expansion trampoline`)
+		// Trampoline: PUSH MaxJob (imm32) + CALL EnsureStatusCapacity + JMP back
+		const p3BackVir = Exe.Phy2Vir(p3CallAddr + 5, CODE); // MOV EAX,[ESI] after original CALL
+
+		const p3TrCode =
+			PUSH(MaxJob) +                      // 68 XX XX 00 00 (5 bytes)
+			CALL(Filler(1)) +                   // E8 rel32        (5 bytes)
+			JMP(Filler(2));                     // E9 rel32        (5 bytes)
+
+		const [p3TrPhys, p3TrVir] = Exe.Allocate(p3TrCode.byteCount(), 0x10);
+		const p3Resolved = SetFillTargets(p3TrCode, {
+			start: p3TrVir,
+			1: p3EnsureCapVir,
+			2: p3BackVir
+		});
+		Exe.SetHex(p3TrPhys, p3Resolved);
+
+		// Replace PUSH imm8(2) + CALL(5) = 7 bytes with JMP(5) + NOP(2)
+		$$(_, `0716.P3.${ti+2}c`, `Redirect ${tbl.name} to trampoline`)
+		const p3PushCapVir = Exe.Phy2Vir(p3PushCapAddr, CODE);
+		const p3Jmp = SetFillTargets(JMP(Filler(1)), {
+			start: p3PushCapVir,
+			1: p3TrVir
+		});
+		Exe.SetHex(p3PushCapAddr, p3Jmp + NOPs(2));
+	}
+
+	// ==========================================================
+	// Phase 4: Expand bounds check in GetJobNameByClassAndGender
 	// ==========================================================
 
-	$$(_, '0716.P3.1', `Overwrite strings for palette and hand Lua functions`)
-	const ReqPCPal = this.overwrite("Magician", "ReqPCPal");
-	const MapPCPal = this.overwrite("Crusader", "MapPCPal");
-	const ReqPCHandPath = this.overwrite("Swordman High", "ReqPCHandPath");
-	const MapPCHandPath = this.overwrite("Magician High", "MapPCHandPath");
+	$$(_, '0716.P4.1', `Find bounds check pattern in GetJobNameByClassAndGender`)
+	const boundsPattern = "83 F9 2B 7C 0B C7 02 0D 00 00 00 B9 0D 00 00 00";
+	const boundsAddr = Exe.FindHex(boundsPattern);
+	if (boundsAddr < 0)
+		throw Error("GetJobNameByClassAndGender bounds check pattern not found");
 
-	$$(_, '0716.P3.2', `Generate palette and hand templates`)
-	const palLimits = [[0, 0x2A]]; // 0-42, matching capacity 0x2B = 43
-	const palTemplates = this.generate(
-		[["ReqPCPal", ReqPCPal], "dd>s", EDI, [LANGTYPE], EAX],
-		[["MapPCPal", MapPCPal], "dd>d", EDI, [LANGTYPE], EAX],
-		[ESP, 0x24]
-	);
+	$$(_, '0716.P4.2', `Build bounds check trampoline`)
+	const boundsOkVir = Exe.Phy2Vir(boundsAddr + 16, CODE); // instruction after 16-byte bounds block
 
-	const handLimits = [[0, 0xA]]; // 0-10, matching capacity 0xB = 11
-	const handTemplates = this.generate(
-		[["ReqPCHandPath", ReqPCHandPath], "dd>s", EDI, [LANGTYPE], EAX],
-		[["MapPCHandPath", MapPCHandPath], "dd>d", EDI, [LANGTYPE], EAX],
-		[ESP, 0x24]
-	);
+	// Trampoline: allow [0, 0x2B) and [0xFA1, MaxJob), clamp all others to 0x0D
+	// Also checks if the male palette table entry is non-NULL (prevents crash
+	// when Lua files don't define the custom job — entry stays NULL after expansion)
+	const trampCode =
+		CMP(ECX, 0x2B) +                    // 83 F9 2B           (3 bytes)  byte 0
+		JL(0x10) +                           // 7C 10 → ok_check   (2 bytes)  byte 3, target=21
+		CMP(ECX, 0xFA1) +                    // 81 F9 A1 0F 00 00  (6 bytes)  byte 5
+		JL(0x14) +                           // 7C 14 → clamp      (2 bytes)  byte 11, target=33
+		CMP(ECX, MaxJob) +                   // 81 F9 XX XX 00 00  (6 bytes)  byte 13
+		JGE(0x0C) +                          // 7D 0C → clamp      (2 bytes)  byte 19, target=33
+		// ok_check: verify table entry is non-NULL before allowing through
+		" A1 0C B3 5F 01" +                  // MOV EAX,[0x15fb30c] (5 bytes) byte 21 — male palette table ptr
+		MOV(EAX, [4, ECX, EAX]) +            // MOV EAX,[ECX*4+EAX] (3 bytes) byte 26 — load entry
+		TEST(EAX, EAX) +                     // TEST EAX,EAX        (2 bytes) byte 29
+		JNZ(0x0B) +                          // JNZ → ok_exit       (2 bytes) byte 31, target=44
+		// clamp: set default index 0x0D
+		" C7 02 0D 00 00 00" +               // MOV [EDX], 0x0D     (6 bytes) byte 33
+		" B9 0D 00 00 00" +                  // MOV ECX, 0x0D       (5 bytes) byte 39
+		// ok_exit:
+		JMP(Filler(5));                      // E9 rel32 → boundsOk (5 bytes) byte 44
 
-	// --- Palette Male (this+0xF4C, capacity 0x2B) ---
-
-	$$(_, '0716.P3.3', `Find palette male table (LEA ESI,[EBX+0xF4C])`)
-	const palMLEA = Exe.FindHex("8D B3 4C 0F 00 00");
-	if (palMLEA < 0)
-		throw Error("Palette male table LEA missing");
-
-	$$(_, '0716.P3.4', `Find palette male capacity PUSH`)
-	const palMCap = Exe.FindHex("6A 2B", palMLEA, palMLEA + 50);
-	if (palMCap < 0)
-		throw Error("Palette male capacity PUSH missing");
-
-	$$(_, '0716.P3.5', `Verify base reload after EnsureStatusCapacity`)
-	const palMMov = Instr.FromAddr(palMCap + 7); // PUSH(2) + CALL(5) = 7
-	if (palMMov.Codes[0] !== 0x8B || palMMov.MRM.Mode === 3)
-		throw Error("Expected MOV after palette male EnsureStatusCapacity");
-
-	const palMHook = palMMov.NextAddr;
-	const palMBase = palMMov.MRM.getReg('O');
-
-	$$(_, '0716.P3.6', `Walk palette male table`)
-	let [palMEnd, palMRet, palMOvf] = FetchTillEnd(palMHook, 1, palMMov, palMBase, -1,
-		(ins) => ins.Codes[0] === 0x8D && ins.MRM.RegO === 6 // LEA ESI
-	);
-	if (palMOvf)
-		throw Error("Palette male table end not found");
-
-	$$(_, '0716.P3.7', `Build and apply palette male replacement`)
-	let palMParts = [PUSH(palMBase) + PUSHAD];
-	for (const tmpl of palTemplates)
-		for (const [min, max] of palLimits)
-			palMParts.push(SwapFillers(tmpl, {1: min, 2: max}));
-
-	palMParts.push(POPAD + ADD(ESP, 4));
-	if (palMRet) palMParts.push(palMRet);
-	palMParts.push(JMP(Filler(3)));
-
-	let palMCode = LUA.finalize(palMParts, Exe.Phy2Vir(palMHook, CODE), {
-		3: Exe.Phy2Vir(palMEnd.Addr, CODE)
+	$$(_, '0716.P4.3', `Allocate and write trampoline`)
+	const [trampPhys, trampVir] = Exe.Allocate(trampCode.byteCount(), 0x10);
+	const resolvedTramp = SetFillTargets(trampCode, {
+		start: trampVir,
+		5: boundsOkVir
 	});
-	Exe.SetHex(palMHook, palMCode);
+	Exe.SetHex(trampPhys, resolvedTramp);
 
-	$$(_, '0716.P3.8', `NOP palette male straggler (entry 42 interleaved after next LEA)`)
-	let stragIns = Instr.FromAddr(palMEnd.Addr);       // LEA ESI (next table)
-	stragIns = Instr.FromAddr(stragIns.NextAddr);       // MOV ECX, ESI
-	stragIns = Instr.FromAddr(stragIns.NextAddr);       // straggler MOV [EAX+disp], imm32
-	if (stragIns.Codes[0] !== 0xC7)
-		throw Error("Expected straggler MOV after palette male end");
-	Exe.SetHex(stragIns.Addr, NOPs(stragIns.NextAddr - stragIns.Addr));
-
-	// --- Palette Female (this+0xF58, capacity 0x2B) ---
-
-	$$(_, '0716.P3.9', `Find palette female capacity PUSH`)
-	const palFCap = Exe.FindHex("6A 2B", palMEnd.Addr, palMEnd.Addr + 30);
-	if (palFCap < 0)
-		throw Error("Palette female capacity PUSH missing");
-
-	const palFMov = Instr.FromAddr(palFCap + 7);
-	if (palFMov.Codes[0] !== 0x8B || palFMov.MRM.Mode === 3)
-		throw Error("Expected MOV after palette female EnsureStatusCapacity");
-
-	const palFHook = palFMov.NextAddr;
-	const palFBase = palFMov.MRM.getReg('O');
-
-	$$(_, '0716.P3.10', `Walk palette female table`)
-	let [palFEnd, palFRet, palFOvf] = FetchTillEnd(palFHook, 1, palFMov, palFBase, -1,
-		(ins) => ins.Codes[0] === 0x8D && ins.MRM.RegO === 6 // LEA ESI
-	);
-	if (palFOvf)
-		throw Error("Palette female table end not found");
-
-	$$(_, '0716.P3.11', `Build and apply palette female replacement`)
-	let palFParts = [PUSH(palFBase) + PUSHAD];
-	for (const tmpl of palTemplates)
-		for (const [min, max] of palLimits)
-			palFParts.push(SwapFillers(tmpl, {1: min, 2: max}));
-
-	palFParts.push(POPAD + ADD(ESP, 4));
-	if (palFRet) palFParts.push(palFRet);
-	palFParts.push(JMP(Filler(3)));
-
-	let palFCode = LUA.finalize(palFParts, Exe.Phy2Vir(palFHook, CODE), {
-		3: Exe.Phy2Vir(palFEnd.Addr, CODE)
+	$$(_, '0716.P4.4', `Redirect bounds check to trampoline`)
+	const boundsVir = Exe.Phy2Vir(boundsAddr, CODE);
+	const jmpToTramp = SetFillTargets(JMP(Filler(6)), {
+		start: boundsVir,
+		6: trampVir
 	});
-	Exe.SetHex(palFHook, palFCode);
+	Exe.SetHex(boundsAddr, jmpToTramp + NOPs(11));
 
-	$$(_, '0716.P3.12', `NOP palette female straggler`)
-	stragIns = Instr.FromAddr(palFEnd.Addr);            // LEA ESI (next table)
-	stragIns = Instr.FromAddr(stragIns.NextAddr);       // MOV ECX, ESI
-	stragIns = Instr.FromAddr(stragIns.NextAddr);       // straggler
-	if (stragIns.Codes[0] !== 0xC7)
-		throw Error("Expected straggler MOV after palette female end");
-	Exe.SetHex(stragIns.Addr, NOPs(stragIns.NextAddr - stragIns.Addr));
+	// ==========================================================
+	// Phase 5: Fix convert_job_to_trans_or_baby subtraction
+	// ==========================================================
+	// The function subtracts 0xF6E (3950) from job IDs > 3950 to convert
+	// baby/trans extended IDs to base form for sprite table lookup.
+	// Custom job IDs get incorrectly subtracted, causing them to
+	// index the wrong sprite (e.g. 4400-3950=450 → wrong job).
+	// Fix: add upper bound check — skip subtraction for IDs >= 0x10F9 (4345),
+	// which is above the highest standard job in any switch case (0x10F8).
 
-	// --- Head Male (this+0x616C, capacity 0xB) ---
+	$$(_, '0716.P5.1', `Find baby subtraction pattern in convert_job_to_trans_or_baby`)
+	// Pattern: CMP ECX, 0xF6E; JLE +6; SUB ECX, 0xF6E
+	const babySubPattern = " 81 F9 6E 0F 00 00 7E 06 81 E9 6E 0F 00 00";
+	const babySubAddr = Exe.FindHex(babySubPattern);
+	if (babySubAddr < 0)
+		throw Error("Baby subtraction pattern not found in convert_job_to_trans_or_baby");
 
-	$$(_, '0716.P3.13', `Find head male capacity PUSH`)
-	const headMCap = Exe.FindHex("6A 0B", palFEnd.Addr, palFEnd.Addr + 30);
-	if (headMCap < 0)
-		throw Error("Head male capacity PUSH missing");
+	$$(_, '0716.P5.2', `Build subtraction fix trampoline`)
+	const babySkipVir = Exe.Phy2Vir(babySubAddr + 14, CODE); // MOV EAX, ECX after the 14-byte block
 
-	const headMMov = Instr.FromAddr(headMCap + 7);
-	if (headMMov.Codes[0] !== 0x8B || headMMov.MRM.Mode === 3)
-		throw Error("Expected MOV after head male EnsureStatusCapacity");
+	// Trampoline: add upper bound check for custom jobs
+	const babyTrampCode =
+		CMP(ECX, 0x10F9) +                  // 81 F9 F9 10 00 00  (6 bytes) — above max standard job
+		JGE(Filler(1)) +                    // 0F 8D rel32         (6 bytes) → skip (use long JGE for Filler)
+		CMP(ECX, 0xF6E) +                   // 81 F9 6E 0F 00 00  (6 bytes) — original check
+		JLE(Filler(2)) +                    // 0F 8E rel32         (6 bytes) → skip
+		SUB(ECX, 0xF6E) +                   // 81 E9 6E 0F 00 00  (6 bytes) — original subtraction
+		JMP(Filler(3));                     // E9 rel32            (5 bytes) → back to MOV EAX, ECX
 
-	const headMHook = headMMov.NextAddr;
-	const headMBase = headMMov.MRM.getReg('O');
-
-	$$(_, '0716.P3.14', `Walk head male table`)
-	let [headMEnd, headMRet, headMOvf] = FetchTillEnd(headMHook, 1, headMMov, headMBase, -1,
-		(ins) => ins.Codes[0] === 0x8D && ins.MRM.RegO === 6 // LEA ESI
-	);
-	if (headMOvf)
-		throw Error("Head male table end not found");
-
-	$$(_, '0716.P3.15', `Build and apply head male replacement`)
-	let headMParts = [PUSH(headMBase) + PUSHAD];
-	for (const tmpl of handTemplates)
-		for (const [min, max] of handLimits)
-			headMParts.push(SwapFillers(tmpl, {1: min, 2: max}));
-
-	headMParts.push(POPAD + ADD(ESP, 4));
-	if (headMRet) headMParts.push(headMRet);
-	headMParts.push(JMP(Filler(3)));
-
-	let headMCode = LUA.finalize(headMParts, Exe.Phy2Vir(headMHook, CODE), {
-		3: Exe.Phy2Vir(headMEnd.Addr, CODE)
+	$$(_, '0716.P5.3', `Allocate and write subtraction fix trampoline`)
+	const [babyTrampPhys, babyTrampVir] = Exe.Allocate(babyTrampCode.byteCount(), 0x10);
+	const resolvedBabyTramp = SetFillTargets(babyTrampCode, {
+		start: babyTrampVir,
+		1: babySkipVir,
+		2: babySkipVir,
+		3: babySkipVir
 	});
-	Exe.SetHex(headMHook, headMCode);
+	Exe.SetHex(babyTrampPhys, resolvedBabyTramp);
 
-	$$(_, '0716.P3.16', `NOP head male straggler`)
-	stragIns = Instr.FromAddr(headMEnd.Addr);           // LEA ESI (next table)
-	stragIns = Instr.FromAddr(stragIns.NextAddr);       // MOV ECX, ESI
-	stragIns = Instr.FromAddr(stragIns.NextAddr);       // straggler
-	if (stragIns.Codes[0] !== 0xC7)
-		throw Error("Expected straggler MOV after head male end");
-	Exe.SetHex(stragIns.Addr, NOPs(stragIns.NextAddr - stragIns.Addr));
-
-	// --- Head Female (this+0x6178, capacity 0xB) ---
-
-	$$(_, '0716.P3.17', `Find head female capacity PUSH`)
-	const headFCap = Exe.FindHex("6A 0B", headMEnd.Addr, headMEnd.Addr + 30);
-	if (headFCap < 0)
-		throw Error("Head female capacity PUSH missing");
-
-	const headFMov = Instr.FromAddr(headFCap + 7);
-	if (headFMov.Codes[0] !== 0x8B || headFMov.MRM.Mode === 3)
-		throw Error("Expected MOV after head female EnsureStatusCapacity");
-
-	const headFHook = headFMov.NextAddr;
-	const headFBase = headFMov.MRM.getReg('O');
-
-	$$(_, '0716.P3.18', `Walk head female table`)
-	let [headFEnd, headFRet, headFOvf] = FetchTillEnd(headFHook, 1, headFMov, headFBase, -1,
-		(ins) => ins.Codes[0] === 0x8D && ins.MRM.Mode === 1 && ins.MRM.RegM === 5 // LEA reg,[EBP+disp8]
-	);
-	if (headFOvf)
-		throw Error("Head female table end not found");
-
-	$$(_, '0716.P3.19', `Build and apply head female replacement`)
-	let headFParts = [PUSH(headFBase) + PUSHAD];
-	for (const tmpl of handTemplates)
-		for (const [min, max] of handLimits)
-			headFParts.push(SwapFillers(tmpl, {1: min, 2: max}));
-
-	headFParts.push(POPAD + ADD(ESP, 4));
-	if (headFRet) headFParts.push(headFRet);
-	headFParts.push(JMP(Filler(3)));
-
-	let headFCode = LUA.finalize(headFParts, Exe.Phy2Vir(headFHook, CODE), {
-		3: Exe.Phy2Vir(headFEnd.Addr, CODE)
+	$$(_, '0716.P5.4', `Redirect subtraction to trampoline`)
+	const babySubVir = Exe.Phy2Vir(babySubAddr, CODE);
+	const jmpToBabyTramp = SetFillTargets(JMP(Filler(7)), {
+		start: babySubVir,
+		7: babyTrampVir
 	});
-	Exe.SetHex(headFHook, headFCode);
+	Exe.SetHex(babySubAddr, jmpToBabyTramp + NOPs(9));
+
+	// ==========================================================
+	// Phase 6: Null resource pointer check in CalcDirectionFromDelta
+	// ==========================================================
+	// RenderAllLayers loads a sprite resource at actor+0x60 from child+0x410
+	// (set by UpdateJobSpriteSprite virtual call). For custom jobs, this field
+	// may be uninitialized (empty string), causing LoadResourceWithLock to
+	// return NULL. The NULL is passed to CalcDirectionFromDelta as param_1,
+	// then forwarded as 'this' to FindCellIndex → access violation crash.
+	// Fix: add null check at CalcDirectionFromDelta entry.
+	// If param_1 ([EBP+8]) is NULL, return 9 (default/unknown direction).
+
+	$$(_, '0716.P6.1', `Find CalcDirectionFromDelta prologue`)
+	// Pattern: PUSH EBP; MOV EBP,ESP; MOV EDX,[EBP+0x14]; MOV ECX,8; SUB ECX,[EBP+0xC]
+	const calcDirPattern = " 55 8B EC 8B 55 14 B9 08 00 00 00 2B 4D 0C";
+	const calcDirAddr = Exe.FindHex(calcDirPattern);
+	if (calcDirAddr < 0)
+		throw Error("CalcDirectionFromDelta prologue not found");
+
+	$$(_, '0716.P6.2', `Build null check trampoline`)
+	const calcDirBackVir = Exe.Phy2Vir(calcDirAddr + 6, CODE); // after the 6 replaced bytes (MOV ECX,8)
+
+	const preNullCode =
+		" 55" +                               // PUSH EBP                    (1 byte)
+		" 8B EC" +                            // MOV EBP, ESP                (2 bytes)
+		" 83 7D 08 00" +                      // CMP DWORD PTR [EBP+8], 0   (4 bytes)
+		JE(Filler(1)) +                       // JE null_ptr                 (6 bytes)
+		" 8B 55 14" +                         // MOV EDX, [EBP+0x14]        (3 bytes)
+		JMP(Filler(2));                       // JMP back to MOV ECX,8      (5 bytes)
+
+	const nullPtrCode =
+		MOV(EAX, 9) +                         // MOV EAX, 9                  (5 bytes)
+		" 5D" +                               // POP EBP                     (1 byte)
+		" C3";                                // RET                         (1 byte)
+
+	const fullCalcDirTrampCode = preNullCode + nullPtrCode;
+
+	$$(_, '0716.P6.3', `Allocate and write null check trampoline`)
+	const [calcDirTrampPhys, calcDirTrampVir] = Exe.Allocate(fullCalcDirTrampCode.byteCount(), 0x10);
+	const nullPtrVir = calcDirTrampVir + preNullCode.byteCount();
+
+	const resolvedCalcDirTramp = SetFillTargets(fullCalcDirTrampCode, {
+		start: calcDirTrampVir,
+		1: nullPtrVir,
+		2: calcDirBackVir
+	});
+	Exe.SetHex(calcDirTrampPhys, resolvedCalcDirTramp);
+
+	$$(_, '0716.P6.4', `Redirect CalcDirectionFromDelta to null check trampoline`)
+	const calcDirVir = Exe.Phy2Vir(calcDirAddr, CODE);
+	const jmpToCalcDirTramp = SetFillTargets(JMP(Filler(1)), {
+		start: calcDirVir,
+		1: calcDirTrampVir
+	});
+	Exe.SetHex(calcDirAddr, jmpToCalcDirTramp + NOPs(1));
+
+	// ==========================================================
+	// Phase 7: Generic Lua-based display name override
+	// ==========================================================
+	// Hook wrappers (GetJobNameByClassGender / GetJobName) at entry.
+	// For custom job IDs (>= 0x10F9/4345) + display callers: look up
+	// name from PCNames Lua table via Lua C API and write to output
+	// std::string (MSVC SSO). No hardcoded job IDs or names — all
+	// names come from Lua/lub files (PCFuncs.lub defines PCNames).
+	// Sprite callers fall through to original wrapper code.
+	//
+	// lua_State* is stored in a global by Phase 9's trampoline.
+	// If Phase 9 hasn't run yet (first frame), falls through safely.
+
+	$$(_, '0716.P7.0', `Allocate global for lua_State pointer`)
+	const [, g_luaState] = Exe.AddInt32(0);
+
+	$$(_, '0716.P7.1', `Locate wrapper functions via CODE section offset`)
+	const codeVirOff = Exe.Phy2Vir(boundsAddr, CODE) - boundsAddr;
+	const wrapperInfo = [
+		{ vir: 0xd5a1f0, name: "GetJobNameByClassGender" },
+		{ vir: 0xd5a480, name: "GetJobName" }
+	];
+	for (const w of wrapperInfo) {
+		w.phys = w.vir - codeVirOff;
+		if (Exe.GetUint8(w.phys) !== 0x55 || Exe.GetUint8(w.phys + 3) !== 0x6A)
+			throw Error(`Wrapper ${w.name} prologue mismatch at 0x${w.vir.toString(16)}`);
+	}
+
+	$$(_, '0716.P7.2', `Build Lua-based display name trampolines`)
+
+	// Display caller return addresses (call_addr + 5) for each wrapper.
+	// These 7 UI functions use the name for text display, NOT sprite loading.
+	const displayRetAddrs = [
+		[0x86bf6c, 0x79fbed, 0x7a1f0e, 0x8ef069, 0x91ca64, 0x885541, 0x869175],
+		[0x86bfba, 0x79fc3b, 0x7a1f62, 0x8ef0c8, 0x91ca86, 0x885590, 0x8691c3]
+	];
+
+	// Lua C API addresses (07-16 specific, shared with Phase 9)
+	const p7_lua_getfield  = 0x519DF0;
+	const p7_lua_rawgeti   = 0x51A650;
+	const p7_lua_tolstring = 0x51ACA0;
+	const p7_lua_settop    = 0x51AAB0;
+
+	for (let wi = 0; wi < 2; wi++) {
+		const w = wrapperInfo[wi];
+		const dispAddrs = displayRetAddrs[wi];
+		let code = "";
+
+		// --- Section 1: Check if custom job (>= 4345) ---
+		code += " 81 7C 24 08 F9 10 00 00";  // CMP DWORD PTR [ESP+8], 0x10F9
+		code += JB(Filler(50));                // JB fallthrough
+
+		// --- Section 2: Check if display caller ---
+		code += " 8B 04 24";                  // MOV EAX, [ESP]
+		for (const addr of dispAddrs) {
+			code += " 3D" + addr.toHex(4);     // CMP EAX, display_addr
+			code += JE(Filler(60));             // JE lua_lookup
+		}
+		code += JMP(Filler(50));               // JMP fallthrough
+
+		// --- Section 3: Lua lookup ---
+		const luaLookupOff = code.byteCount();
+		code += " 53 56 57";                  // PUSH EBX; PUSH ESI; PUSH EDI
+
+		// Get lua_State*
+		code += " A1" + g_luaState.toHex(4);  // MOV EAX, [g_luaState]
+		code += " 85 C0";                     // TEST EAX, EAX
+		code += JZ(Filler(70));                // JZ cleanup_fall
+		code += " 8B D8";                     // MOV EBX, EAX (L)
+		code += " 8B 7C 24 14";              // MOV EDI, [ESP+0x14] (job_id)
+
+		// lua_getfield(L, LUA_GLOBALSINDEX, "PCNames")
+		const p7PushStrOff = code.byteCount();
+		code += " 68 00 00 00 00";            // PUSH &"PCNames" (fixup after alloc)
+		code += " 68 EE D8 FF FF";           // PUSH LUA_GLOBALSINDEX (-10002)
+		code += " 53";                        // PUSH EBX (L)
+		code += CALL(Filler(91));              // CALL lua_getfield
+		code += " 83 C4 0C";                 // ADD ESP, 12
+
+		// lua_rawgeti(L, -1, jobid)
+		code += " 57";                        // PUSH EDI (job_id)
+		code += " 6A FF";                    // PUSH -1
+		code += " 53";                        // PUSH EBX (L)
+		code += CALL(Filler(92));              // CALL lua_rawgeti
+		code += " 83 C4 0C";                 // ADD ESP, 12
+
+		// lua_tolstring(L, -1, NULL)
+		code += PUSH_0;                       // PUSH 0
+		code += " 6A FF";                    // PUSH -1
+		code += " 53";                        // PUSH EBX (L)
+		code += CALL(Filler(93));              // CALL lua_tolstring
+		code += " 83 C4 0C";                 // ADD ESP, 12
+
+		// Save name in ESI
+		code += " 89 C6";                    // MOV ESI, EAX
+
+		// lua_settop(L, -3) — pop table + value
+		code += " 6A FD";                    // PUSH -3
+		code += " 53";                        // PUSH EBX (L)
+		code += CALL(Filler(94));              // CALL lua_settop
+		code += " 83 C4 08";                 // ADD ESP, 8
+
+		// Check name valid
+		code += " 85 F6";                    // TEST ESI, ESI
+		code += JZ(Filler(70));               // JZ cleanup_fall
+		code += " 80 3E 00";                // CMP BYTE PTR [ESI], 0
+		code += JE(Filler(70));               // JE cleanup_fall
+
+		// --- Section 4: Write name to output std::string (MSVC SSO) ---
+		code += " 8B 4C 24 10";             // MOV ECX, [ESP+0x10] (output string*)
+
+		// Zero buffer + set SSO capacity
+		code += " 33 C0";                    // XOR EAX, EAX
+		code += " 89 01";                    // MOV [ECX], EAX
+		code += " 89 41 04";                // MOV [ECX+4], EAX
+		code += " 89 41 08";                // MOV [ECX+8], EAX
+		code += " 89 41 0C";                // MOV [ECX+0C], EAX
+		code += " 89 41 10";                // MOV [ECX+10], EAX
+		code += " C7 41 14 0F 00 00 00";    // MOV [ECX+14], 0x0F
+
+		// Copy name (max 15 chars for SSO inline buffer)
+		code += " 33 C0";                    // XOR EAX, EAX
+		// copy_loop:
+		code += " 8A 14 30";                // MOV DL, [EAX+ESI]
+		code += " 88 14 01";                // MOV [ECX+EAX], DL
+		code += " 84 D2";                   // TEST DL, DL
+		code += " 74 05";                   // JZ copy_done (+5)
+		code += " 40";                       // INC EAX
+		code += " 3C 0F";                   // CMP AL, 0x0F
+		code += " 72 F1";                   // JB copy_loop (-15)
+		// copy_done:
+		code += " 89 41 10";                // MOV [ECX+10], EAX (set size)
+
+		// Return successfully
+		code += " 5F 5E 5B";                // POP EDI; POP ESI; POP EBX
+		code += " 8B C1";                   // MOV EAX, ECX
+		code += " C2 10 00";                // RETN 0x10
+
+		// --- Section 5: cleanup_fall ---
+		const cleanupFallOff = code.byteCount();
+		code += " 5F 5E 5B";                // POP EDI; POP ESI; POP EBX
+
+		// --- Section 6: fallthrough (original prologue + JMP back) ---
+		const fallthroughOff = code.byteCount();
+		code += " 55 8B EC 6A FF";          // PUSH EBP; MOV EBP,ESP; PUSH -1
+		code += JMP(Filler(1));              // JMP wrapper+5
+
+		// --- Data: "PCNames" string ---
+		const p7StrOff = code.byteCount();
+		code += " 50 43 4E 61 6D 65 73 00"; // "PCNames\0"
+
+		// --- Allocate and write trampoline ---
+		$$(_, `0716.P7.${wi+1}a`, `Allocate wrapper ${wi+1} (${w.name}) trampoline`)
+		const [trPhys, trVir] = Exe.Allocate(code.byteCount(), 0x10);
+		const fills = {
+			start: trVir,
+			1:  w.vir + 5,
+			50: trVir + fallthroughOff,
+			60: trVir + luaLookupOff,
+			70: trVir + cleanupFallOff,
+			91: p7_lua_getfield,
+			92: p7_lua_rawgeti,
+			93: p7_lua_tolstring,
+			94: p7_lua_settop
+		};
+		Exe.SetHex(trPhys, SetFillTargets(code, fills));
+
+		// Fix up PUSH &"PCNames" (absolute address, not relative)
+		Exe.SetInt32(trPhys + p7PushStrOff + 1, trVir + p7StrOff);
+
+		// --- Redirect wrapper entry ---
+		$$(_, `0716.P7.${wi+1}b`, `Redirect wrapper ${wi+1} entry to trampoline`)
+		Exe.SetHex(w.phys, SetFillTargets(JMP(Filler(1)), { start: w.vir, 1: trVir }));
+	}
+
+	// ==========================================================
+	// Phase 8: Fix CMode__GetJobSpriteIndex for custom jobs
+	// ==========================================================
+	// CMode__GetJobSpriteIndex (0xd5bb40) is used by UIBasicInfoWnd,
+	// character select, and other UI for the English job name display.
+	// Jobs in range [0xFA1, 0xFA1+0x7CE] (4001-5999) go through
+	// C3dActorPC__GetJobClassType which transforms them to standard
+	// job indices — custom jobs get wrong names (e.g. "Poring").
+	// Fix: change 0x7CE to 0x157 (= 0x10F8-0xFA1) so custom jobs
+	// (>= 0x10F9/4345) take the direct table lookup path instead,
+	// where Phase 1 stored the Lua-defined name.
+	// Pattern: LEA ECX,[EDX-0xFA1]; CMP ECX,0x7CE; JBE
+
+	$$(_, '0716.P8.1', `Find GetJobSpriteIndex range check`)
+	const sprIdxPattern = " 8D 8A 5F F0 FF FF 81 F9 CE 07 00 00 76";
+	const sprIdxAddr = Exe.FindHex(sprIdxPattern);
+	if (sprIdxAddr < 0)
+		throw Error("GetJobSpriteIndex range check pattern not found");
+
+	$$(_, '0716.P8.2', `Patch range threshold from 0x7CE to 0x157`)
+	// CMP ECX, 0x7CE is at sprIdxAddr+6, immediate at sprIdxAddr+8
+	Exe.SetInt16(sprIdxAddr + 8, 0x0157);
+
+	// Phase 8.3-8.4: REMOVED — InitLuaResourceTables loop extension was a no-op.
+	// CLua::CallScriptFunction is broken (stock client bug) — the loop never
+	// successfully invokes ReqPCJobName regardless of iteration count.
+	// Phase 9 bypasses this by calling Lua C API directly at query time.
+
+	// ==========================================================
+	// Phase 9: Lua C API code cave in GetJobSpriteIndex
+	// ==========================================================
+	// The 0xf88 display name table is never populated because
+	// CLua::CallScriptFunction is broken in InitLuaResourceTables
+	// (stock client bug — it never enters Lua for ReqPCJobName).
+	// Fix: replace the direct table lookup for custom job IDs
+	// (MOV EAX,[ESI+EDX*4] after Phase 8's range check) with a
+	// JMP to a code cave that calls Lua C API directly:
+	//   lua_getfield(L, LUA_GLOBALSINDEX, "PCNames")
+	//   lua_rawgeti(L, -1, jobid)
+	//   lua_tolstring(L, -1, NULL)
+	// This runs at QUERY TIME when UI needs the name, so the
+	// Lua state is valid and PCNames table is populated.
+
+	$$(_, '0716.P9.1', `Locate MOV EAX,[ESI+EDX*4] after range check`)
+	// MOV is 19 bytes after the LEA pattern found by Phase 8:
+	// LEA(6) + CMP(6) + JBE(2) + CMP(3) + JBE(2) = 19
+	const movAddr = sprIdxAddr + 19;
+	const movBytes = Exe.GetHex(movAddr, 3);
+	if (movBytes !== " 8B 04 96")
+		throw Error("GetJobSpriteIndex MOV EAX,[ESI+EDX*4] not found at expected offset (got " + movBytes + ")");
+
+	$$(_, '0716.P9.2', `Build Lua C API trampoline`)
+	// Lua C API addresses (07-16 specific)
+	const lua_getfield  = 0x519DF0;
+	const lua_rawgeti   = 0x51A650;
+	const lua_tolstring = 0x51ACA0;
+	const lua_settop    = 0x51AAB0;
+
+	let p9code = "";
+
+	// Save registers
+	p9code += " 53";                        // PUSH EBX
+	p9code += " 51";                        // PUSH ECX
+	p9code += " 52";                        // PUSH EDX (job ID)
+
+	// Get CLua* from CGameMode (EDI = this)
+	p9code += " 8B 87 B8 59 00 00";        // MOV EAX, [EDI+0x59B8]
+	p9code += " 85 C0";                    // TEST EAX, EAX
+	p9code += JZ(Filler(90));              // JZ fallback
+
+	// Get lua_State* (first field of CLua struct)
+	p9code += " 8B 00";                    // MOV EAX, [EAX]
+	p9code += " 85 C0";                    // TEST EAX, EAX
+	p9code += JZ(Filler(90));              // JZ fallback
+
+	// EBX = lua_State*
+	p9code += " 8B D8";                    // MOV EBX, EAX
+	p9code += " 89 1D" + g_luaState.toHex(4); // MOV [g_luaState], EBX — save for Phase 7
+
+	// lua_getfield(L, LUA_GLOBALSINDEX, "PCNames")
+	// Note: PUSH needs an absolute address, not a Filler (which resolves
+	// to a relative offset). We write a placeholder here and fix it up
+	// with Exe.SetInt32 after allocation gives us the real VA.
+	const p9PushStrOff = p9code.byteCount();
+	p9code += " 68 00 00 00 00";          // PUSH &"PCNames" (placeholder, fixed after alloc)
+	p9code += " 68 EE D8 FF FF";          // PUSH 0xFFFFD8EE (-10002 = LUA_GLOBALSINDEX)
+	p9code += " 53";                       // PUSH EBX (L)
+	p9code += CALL(Filler(91));            // CALL lua_getfield
+	p9code += " 83 C4 0C";                // ADD ESP, 12
+
+	// lua_rawgeti(L, -1, jobid)
+	p9code += " FF 34 24";                // PUSH [ESP] (saved EDX = job ID)
+	p9code += " 6A FF";                   // PUSH -1 (table at Lua stack top)
+	p9code += " 53";                       // PUSH EBX (L)
+	p9code += CALL(Filler(92));            // CALL lua_rawgeti
+	p9code += " 83 C4 0C";                // ADD ESP, 12
+
+	// lua_tolstring(L, -1, NULL) -> EAX = const char*
+	p9code += PUSH_0;                      // PUSH 0 (len ptr = NULL)
+	p9code += " 6A FF";                   // PUSH -1
+	p9code += " 53";                       // PUSH EBX (L)
+	p9code += CALL(Filler(93));            // CALL lua_tolstring
+	p9code += " 83 C4 0C";                // ADD ESP, 12
+
+	// Save result on stack (ECX/EDX are caller-saved, lua_settop clobbers them)
+	p9code += " 50";                        // PUSH EAX (save tolstring result)
+
+	// lua_settop(L, -3) — pop PCNames table + value from Lua stack
+	p9code += " 6A FD";                   // PUSH -3
+	p9code += " 53";                       // PUSH EBX (L)
+	p9code += CALL(Filler(94));            // CALL lua_settop
+	p9code += " 83 C4 08";                // ADD ESP, 8
+
+	// Restore and check result
+	p9code += " 58";                        // POP EAX (restore tolstring result)
+	p9code += " 85 C0";                    // TEST EAX, EAX
+	p9code += JZ(Filler(90));              // JZ fallback
+
+	// Success: return EAX (char* to job name from Lua)
+	p9code += " 5A 59 5B";                // POP EDX; POP ECX; POP EBX
+	p9code += " 5F 5E";                   // POP EDI; POP ESI
+	p9code += FP_STOP;                     // MOV ESP,EBP; POP EBP
+	p9code += " C2 08 00";                // RET 8
+
+	// Fallback: original table lookup (returns "Poring" etc)
+	const p9FallbackOff = p9code.byteCount();
+	p9code += " 5A 59 5B";                // POP EDX; POP ECX; POP EBX
+	p9code += " 8B 04 96";                // MOV EAX, [ESI+EDX*4] (original)
+	p9code += " 5F 5E";                   // POP EDI; POP ESI
+	p9code += FP_STOP;                     // MOV ESP,EBP; POP EBP
+	p9code += " C2 08 00";                // RET 8
+
+	// Data: "PCNames" string
+	const p9StrOff = p9code.byteCount();
+	p9code += " 50 43 4E 61 6D 65 73 00"; // "PCNames\0"
+
+	$$(_, '0716.P9.3', `Allocate and write Lua C API trampoline`)
+	const [p9Phys, p9Vir] = Exe.Allocate(p9code.byteCount(), 0x10);
+
+	const p9Fills = {
+		start: p9Vir,
+		90: p9Vir + p9FallbackOff,     // fallback label
+		91: lua_getfield,              // CALL lua_getfield
+		92: lua_rawgeti,               // CALL lua_rawgeti
+		93: lua_tolstring,             // CALL lua_tolstring
+		94: lua_settop                 // CALL lua_settop
+	};
+	Exe.SetHex(p9Phys, SetFillTargets(p9code, p9Fills));
+
+	// Fix up the PUSH &"PCNames" with the absolute address
+	// (Filler system computes relative offsets, but PUSH needs absolute)
+	Exe.SetInt32(p9Phys + p9PushStrOff + 1, p9Vir + p9StrOff);
+
+	$$(_, '0716.P9.4', `Redirect GetJobSpriteIndex table lookup to trampoline`)
+	const movVir = Exe.Phy2Vir(movAddr, CODE);
+	const p9Jmp = SetFillTargets(JMP(Filler(1)), {
+		start: movVir,
+		1: p9Vir
+	});
+	// Replace MOV(3) + epilogue(8) = 11 bytes with JMP(5) + NOPs(6)
+	Exe.SetHex(movAddr, p9Jmp + NOPs(6));
+
+
+	// ============================================================
+	// Phase 10: Extend is_job_id_in_range for custom jobs
+	// ============================================================
+	// is_job_id_in_range (0xd9d290) checks [4332, 4349] (Summoner/Doram range).
+	// GetJobSprNameEx uses the result to choose between:
+	//   - In-range path: uses sprite name from table + is_doram_job_id for race dir
+	//   - Not-in-range path: Korean fallback (wrong name for custom jobs)
+	// Extending to [4332, MaxJob] makes custom jobs take the in-range path.
+	// is_doram_job_id (separate function) correctly returns 0 for custom jobs,
+	// so GetRaceNameShort selects human race (인간족) — not Doram (도람족).
+
+	$$(_, '0716.P10.1', `Find is_job_id_in_range function`)
+	const rangePattern =
+		" 55 8B EC 8B 45 08"          // PUSH EBP; MOV EBP,ESP; MOV EAX,[EBP+8]
+	+	" 05 14 EF FF FF"             // ADD EAX, -4332
+	+	" 83 F8 11"                   // CMP EAX, 0x11 (17 = 4349-4332)
+	+	" 0F 96 C0"                   // SETBE AL
+	+	" 5D"                         // POP EBP
+	+	" C2 04 00"                   // RET 4
+	;
+	const rangeAddr = Exe.FindHex(rangePattern);
+	if (rangeAddr < 0)
+		throw Error("is_job_id_in_range pattern not found");
+
+	$$(_, '0716.P10.2', `Verify CC padding after function`)
+	const paddingBytes = Exe.GetHex(rangeAddr + 21, 2);
+	if (paddingBytes !== " CC CC")
+		throw Error("Expected CC CC padding after is_job_id_in_range, got " + paddingBytes);
+
+	$$(_, '0716.P10.3', `Patch range from [4332,4349] to [4332,MaxJob]`)
+	// CMP EAX,imm8 (83 F8 11, 3 bytes) -> CMP EAX,imm32 (3D xx xx xx xx, 5 bytes)
+	// Uses the 2 CC padding bytes for the extra 2 bytes. Total: 23 bytes.
+	const newRangeFunc =
+		" 55 8B EC 8B 45 08"          // PUSH EBP; MOV EBP,ESP; MOV EAX,[EBP+8]
+	+	" 05 14 EF FF FF"             // ADD EAX, -4332
+	+	" 3D 00 00 00 00"             // CMP EAX, imm32 (placeholder for MaxJob-4332)
+	+	" 0F 96 C0"                   // SETBE AL
+	+	" 5D"                         // POP EBP
+	+	" C2 04 00"                   // RET 4
+	;
+	Exe.SetHex(rangeAddr, newRangeFunc);
+	Exe.SetInt32(rangeAddr + 12, MaxJob - 4332);
+
 
 	$$(_, '0716.12', `Add Lua file loaders`)
 	const fileHookAddr = hookAddr + code.byteCount();
