@@ -50,7 +50,7 @@ Then create a `data/` folder or GRF with your server's custom content (JobInfo L
 
 ## Issues & Suggestions
 
-Found a bug or have a suggestion? Post it in the [Issues](https://github.com/CrazyBebop/WARP0716/issues) section or join the [Discord](https://discord.gg/34hFYPse).
+Found a bug or have a suggestion? Post it in the [Issues](https://github.com/CrazyBebop/WARP0716/issues) section or join the [Discord](https://discord.com/invite/7CpRVcmjeB).
 
 ## Donate
 
