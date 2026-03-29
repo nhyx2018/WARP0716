@@ -49,6 +49,8 @@ PreviewInTrader = function (_)
     let tpl =
           CALL(Filler(1))
         + MOV(ECX, [0x015D4818])
+        + TEST(ECX, ECX)
+        + " 74 13"                    // JZ +19 → skip to JMP (null-safe for cashshop NPCs)
         + MOV(ECX, [ECX, 0x4])
         + ADD(ECX, 0x8)
         + MOVZX(EAX, [ESI, 0x0D])
