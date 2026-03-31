@@ -5,7 +5,7 @@
 Development of WARP0716 is being placed on hold for the foreseeable future.
 
 **What's been accomplished:**
-- 43 recommended patches for the 2025-07-16 kRO Ragexe client
+- 40 recommended patches for the 2025-07-16 kRO Ragexe client
 - Custom Jobs system (Reforged)
 - EnableCustomFonts — fully rewritten to load .ttf fonts natively
 - Multi-connection clientinfo support
