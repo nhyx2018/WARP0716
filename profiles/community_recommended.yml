@@ -108,7 +108,7 @@ patches:
     - GuildBrackets
     - FixChatAt
     - NoHourly
-    - NoSerialDisplay
+
     - NoHelpMsg
     - FixSkillbarReset
     - NoGravityAds

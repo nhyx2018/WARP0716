@@ -2,7 +2,7 @@
 
 WARP patches for the 2025-07-16 client build. This build of WARP **only accepts the 2025-07-16 client EXE** — it will reject any other version.
 
-21 patches fixed, dead/incompatible patches removed, and all patch descriptions rewritten for the 07-16 client. If you find something off, please [open an issue](https://github.com/CrazyBebop/WARP0716/issues).
+22 patches fixed, dead/incompatible patches removed, and all patch descriptions rewritten for the 07-16 client. If you find something off, please [open an issue](https://github.com/CrazyBebop/WARP0716/issues).
 
 ## Setup
 
@@ -16,11 +16,13 @@ Click **"Recommended"** in the WARP GUI to select all recommended patches at onc
 
 ## What's New
 
-### ⚠️ New Client EXE Required (Mar 26, 2026) ⚠️
+### ⚠️ Final Update — New Client EXE Required (Mar 30, 2026) ⚠️
 
-The multi-connection and cancel-exit features require a patched base EXE (`2025-07-16_Ragexe_175220998_clientinfo.exe`). **Download the updated EXE here:**
+This is the final update for WARP0716. All features below require the updated base EXE. **Download it here:**
 
 [2025-07-16_Ragexe_175220998_clientinfo.zip](https://mirror2.romirrors.com/downloads/2025-07-16_Ragexe_175220998_clientinfo.zip)
+
+**Character Select X Button Fix** — Fixed a bug where pressing the X button on the character select screen would show a "Are you sure you want to quit?" dialog instead of returning to the login screen. The previous cancel-exit patch was too broad and affected shared event guards. Now uses a targeted hook that only activates on the server selection screen.
 
 **Cancel-Exit on Service Select** — The server select screen is now fully functional. Previously the cancel button did nothing — now it shows a "Are you sure you want to quit?" dialog and exits the client. The cancel button also automatically changes to say "exit" when on this screen. No extra files needed — the exit button graphics already exist in the GRF.
 
@@ -61,6 +63,42 @@ It is never required, but if you feel the need to contribute to the project fina
 **PayPal:** <a href="https://www.paypal.com/donate/?hosted_button_id=WW9FD6SLEZ5BN"><img src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif" alt="Donate via PayPal"></a>
 
 Special thanks to everyone who has donated — your support keeps this project going.
+
+## Development Status — On Hold
+
+Development of WARP0716 is being placed on hold for the foreseeable future.
+
+**What's been accomplished:**
+- 43 recommended patches for the 2025-07-16 kRO Ragexe client
+- Custom Jobs system (Reforged)
+- EnableCustomFonts — fully rewritten to load .ttf fonts natively
+- Multi-connection clientinfo support
+- Cancel-to-exit on the service select screen
+- Allow65kHairs with full CustomJobs compatibility
+- …and plenty more improvements across the board
+
+**What this means for you:**
+Nothing changes on your end. The repository will remain available, all current patches will continue to work, and you're free to keep using WARP0716 as you have been. The only change is that active development (new patches, fixes, updates) will be paused for now.
+
+### What's next — Introducing FORGE
+
+Due to the limitations of WARP and the lack of source flexibility, development is shifting toward something bigger.
+
+**FORGE** is a modern, open-source replacement for legacy tools like WARP and NEMO — built from the ground up as a standalone desktop application that brings everything into one place:
+
+- Visual binary patcher with a clean, modern UI
+- Executable manager — download and update supported clients directly
+- Client file manager with delta patching for fast updates
+- Multi-server profiles — easily switch between different configs
+- Self-updating via GitHub Releases
+- Cross-platform support (Windows + Linux + MacOS)
+- Server-agnostic — any server can integrate via a simple manifest
+
+The goal is simple: make patching RO clients as painless and flexible as possible for server operators.
+
+More details, and a preview — coming soon.
+
+Thanks to everyone who's tested, reported issues, and helped shape WARP0716. Everything learned here is carrying forward into FORGE.
 
 ## Credits
 

@@ -20,9 +20,9 @@
 #                                                                          #
 ############################################################################
 #                                                                          #
-#   Author(s)     : Neo-Mind                                               #
+#   Author(s)     : Neo-Mind, CrazyBebop                                   #
 #   Created Date  : 2021-08-19                                             #
-#   Last Modified : 2021-08-19                                             #
+#   Last Modified : 2026-03-29                                             #
 #                                                                          #
 ############################################################################
 
@@ -32,11 +32,6 @@
 4   : CustomAuraLimits
 5   : EnableProxy
 6   : SendMD5Hash
-
-#--- Didnt implement this in NEMO either. Maybe will implement in future.
-#7   : ChangeGravityErrorHandler
-#---------------------------------
-
 9   : No1and1Arg
 10  : NoCharnameLimit
 11  : NoUsernameLimit
@@ -84,7 +79,6 @@
 59  : CustomPartyColorSelf
 60  : CustomPublicColorSelf
 61  : NoPacketEncr
-
 63  : OfficialPal
 64  : FixChatAt
 65  : CustomItemInfoLub
@@ -105,10 +99,7 @@
 81  : CustomLicenseTxt
 82  : HeadPalMF
 83  : HeadPalUnisex
-84  : NoSerialDisplay
 85  : ShowCancelBtn
-86  : OnlyFirstBG
-87  : OnlySecondBG
 88  : AllowSpaceInGName
 91  : DisConnToLogin
 92  : CustomFirstKey
@@ -122,20 +113,13 @@
 101 : SkipInFriendList
 102 : SkipInGuildList
 104 : IncrNewCharHairs
-
 114 : CustomVendingLimit
 115 : EnableEffectTool
 200 : GRFsEmbedded
 201 : CustomHomuns
 202 : CustomJobs
 203 : CustomShields
-
-#--- Not sure if this is necessary hence not planning to implement
-# 205 : EnableMonsterTables
-#---------------------------------
-
 206 : CustomQuestLua
-208 : ShowCashShop
 210 : CustomIcon
 211 : CustomDLL
 212 : ShowRoulette
@@ -150,11 +134,6 @@
 221 : RemoveBookingJobs
 222 : ShowReplayBtn
 223 : MoveUpItemCount
-
-#--- Didnt implement this in NEMO either. Maybe will implement in future.
-# 224 : IncrNpcIDs
-#---------------------------------
-
 225 : ShowRegisterBtn
 226 : NoWalkDelay
 227 : CustomWalkDelay
@@ -162,11 +141,7 @@
 229 : ShowBGEmblem
 230 : LoadKrExtSettings
 232 : UseOldLogin
-
-#--- Merged into HideNewButtons patch
-233 : HideNewButtons # Originally HideSNSButton
-#---------------------------------
-
+233 : HideNewButtons
 234 : IgnoreLuaErr
 235 : AllowGuildInClan
 236 : CustomPlayerSkills
@@ -182,26 +157,19 @@
 249 : CustomMinResolution
 250 : AllowPL2Leave
 251 : CloseCutinOnEsc
-
-#--- Not needed anymore hence will not be implemented ---
-# 253 : SkipHiddenMenuButtons
-#---------------------------------
-
 254 : CustomInventoryLimit
 255 : DecrAFDelay
 256 : DefShopBrowser
 258 : ShortcutForAll
-
-259 : [HideNewButtons, ShowNewButtons] #Originally NavigationButton
-260 : [HideNewButtons, ShowNewButtons] #Originally BankButton
-261 : [HideNewButtons, ShowNewButtons] #Originally ReplayButton
-262 : [HideNewButtons, ShowNewButtons] #Originally MailButton
-263 : [HideNewButtons, ShowNewButtons] #Originally AchievementButton
-264 : [HideNewButtons, ShowNewButtons] #Originally TipButton
-265 : [HideNewButtons, ShowNewButtons] #Originally ShopButton
-266 : [HideNewButtons, ShowNewButtons] #Originally SNSButton
-267 : [HideNewButtons, ShowNewButtons] #Originally AttendanceButton
-
+259 : [HideNewButtons, ShowNewButtons]
+260 : [HideNewButtons, ShowNewButtons]
+261 : [HideNewButtons, ShowNewButtons]
+262 : [HideNewButtons, ShowNewButtons]
+263 : [HideNewButtons, ShowNewButtons]
+264 : [HideNewButtons, ShowNewButtons]
+265 : [HideNewButtons, ShowNewButtons]
+266 : [HideNewButtons, ShowNewButtons]
+267 : [HideNewButtons, ShowNewButtons]
 268 : RestoreChatFocus
 269 : CustomDefaultBGM
 270 : CustomAchieveLub
@@ -213,43 +181,29 @@
 276 : CustomOngQuestInfoLub
 277 : CustomRcmdQuestInfoLub
 278 : CustomPrivAirplaneLub
-
 280 : CustomGuildExpLimit
 281 : ResizePlayerBar
 282 : ResizeBossBar
 283 : CustomFadeDelay
-
-#--- This is now an addon step in NoCDefender when the patch is applied. Hence not required ---
-# 284 : CopyCDGuard
-#---------------------------------
-
 286 : HideZeroDateInGuildWin
 287 : RelativeDelay4CharDel
 290 : HideBuildInfo
-
-#--- To be implemented in WARP ---
-# 292 : FixShortcutsInWine
-#---------------------------------
-
 295 : CustomPartyLimit
 296 : UseStateLubIcon
-
-297 : HideNewButtons #Originally HideKeyboardButton
-298 : HideNewButtons #Originally HideStatusButton
-299 : HideNewButtons #Originally HideEquipButton
-300 : HideNewButtons #Originally HideItemButton
-301 : HideNewButtons #Originally HideSkillButton
-302 : HideNewButtons #Originally HidePartyButton
-303 : HideNewButtons #Originally HideGuildButton
-304 : HideNewButtons #Originally HideOptionButton
-305 : HideNewButtons #Originally HideTipButton
-306 : HideNewButtons #Originally HideShopButton
-307 : HideNewButtons #Originally HideAttendanceButton
-308 : HideNewButtons #Originally HideAdventurerAgencyButton
-
-309 : [HideNewButtons, ShowNewButtons] #Originally BookingButton
-310 : [HideNewButtons, ShowNewButtons] #Originally AdventurerAgencyButton
-
+297 : HideNewButtons
+298 : HideNewButtons
+299 : HideNewButtons
+300 : HideNewButtons
+301 : HideNewButtons
+302 : HideNewButtons
+303 : HideNewButtons
+304 : HideNewButtons
+305 : HideNewButtons
+306 : HideNewButtons
+307 : HideNewButtons
+308 : HideNewButtons
+309 : [HideNewButtons, ShowNewButtons]
+310 : [HideNewButtons, ShowNewButtons]
 311 : AllowSkillSpam
 312 : Intravision
 313 : CustomMapInfoLub
@@ -265,32 +219,17 @@
 329 : NoCameraLock
 330 : SkipSignBoard
 331 : NoBlindness
-
-#--- Tutorial patch? Need to think of one that suits WARP then --
-# 332 : SimpleReplaceDemo
-#----------------------------------------------------------------
-
 334 : NoHardCodedIP
 335 : EnableHttpEmblem
 336 : NoEquipPreview
 337 : CustomAdvAgencyLimits
-
-#--- To be implemented in WARP ---
-# 338 : ValidateClient
-#---------------------------------
-
 350 : EnableFlagAnimation
 351 : EnableNpcDialogueScrolling
 352 : HideItemba
-
-#--- Ported patches ---
-359 : IncreaseHairsLimit
-360 : RestoreSongsEffect
-
-#--- Missing from original table ---
 353 : ShowGvGDamage
 354 : PreviewInShop
 355 : PreviewInTrader
 356 : SendClientFlags
 357 : RestoreCpsDll
 358 : CustomMissingLauncherMsg
+360 : RestoreSongsEffect

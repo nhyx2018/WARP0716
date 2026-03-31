@@ -208,7 +208,7 @@ EquipPreview:
         - PreviewInTrader:
             title : Enable equipment preview in Trader Shop
             recommend : no
-            author : Andrei Karas (4144) , Neo-Mind
+            author : Andrei Karas (4144) , Neo-Mind, CrazyBebop
             desc: Adds an equipment preview button in the older-style Trader Shop (right-click items to see it). Requires server-side support to be enabled as well.
 
         - HideCashShop:
