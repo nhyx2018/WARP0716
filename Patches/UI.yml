@@ -32,6 +32,12 @@ CustomUI:
     color : orangered
     
     patches:
+        - LoadGRFOnSlashCmd:
+            title : Load GRF via Slash Command
+            recommend : no
+            author : Demonbytes (NoxaraRO)
+            desc : Adds a configurable slash command (default /greyworld) that loads a specified GRF archive at runtime via CFileMgr::AddPak. Typing the command toggles the GRF on/off with chat feedback. The state persists across sessions via the registry. Assets become available on the next map change.
+
         - AllowShortcutsInWine:
             title : Allow shortcuts in WINE [Experimental]
             recommend : no
